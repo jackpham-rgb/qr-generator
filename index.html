@@ -10,8 +10,10 @@
     h2 { margin: 0 0 12px; }
     textarea { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; resize: none; }
     button { margin-top: 14px; padding: 10px 20px; font-size: 16px; display: inline-block; }
-    #canvas { display: block; margin: 20px auto 6px; max-width: 90%; height: auto; }
-    #status { font-size: 13px; color: #666; min-height: 1.2em; }
+    #qrimg { display: none; margin: 20px auto 6px; max-width: 90%; height: auto; }
+    #hint { font-size: 13px; color: #666; }
+    /* hidden worker canvas */
+    #qrcanvas { position: absolute; left: -9999px; top: -9999px; }
   </style>
 </head>
 <body>
@@ -19,29 +21,37 @@
 
   <textarea id="data" rows="3" placeholder="Type text or link"></textarea><br>
   <button id="gen">Generate</button>
-  <button id="download" style="display:none;">Download PNG</button>
 
-  <canvas id="canvas" style="display:none;"></canvas>
-  <div id="status"></div>
+  <!-- Image that users can long-press to save -->
+  <img id="qrimg" alt="QR code image (JPEG)" />
+
+  <!-- Offscreen canvas used to render QR before converting to JPG -->
+  <canvas id="qrcanvas"></canvas>
 
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
   <script>
     const dataEl = document.getElementById('data');
     const genBtn = document.getElementById('gen');
-    const dlBtn = document.getElementById('download');
-    const canvas = document.getElementById('canvas');
-    const statusEl = document.getElementById('status');
+    const imgEl = document.getElementById('qrimg');
+    const canvas = document.getElementById('qrcanvas');
 
-    function ts() {
-      const d = new Date(), p = n => String(n).padStart(2,'0');
-      return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+    function cleanUrlIfPossible(text) {
+      try {
+        const u = new URL(text);
+        const strip = ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','fbclid','gclid'];
+        strip.forEach(k => u.searchParams.delete(k));
+        return u.toString();
+      } catch {
+        return text; // not a URL
+      }
     }
 
-    async function renderQR(text) {
-      const size = 256; // pixel size
-      canvas.width = size; canvas.height = size;
+    async function renderQRToCanvas(text) {
+      const size = 256; // visual pixels
+      canvas.width = size;
+      canvas.height = size;
 
-      // 1) Try compact: version=1, EC=L
+      // Try compact first: version 1 + EC L
       try {
         await QRCode.toCanvas(canvas, text, {
           version: 1,
@@ -49,45 +59,29 @@
           width: size,
           margin: 2
         });
-        statusEl.textContent = 'Mode: compact (V1, L)';
         return;
-      } catch {}
-
-      // 2) Fallback: auto version, still EC=L
-      await QRCode.toCanvas(canvas, text, {
-        errorCorrectionLevel: 'L',
-        width: size,
-        margin: 2
-      });
-      statusEl.textContent = 'Mode: standard (auto version, L)';
+      } catch {
+        // Fallback: auto version, still EC L
+        await QRCode.toCanvas(canvas, text, {
+          errorCorrectionLevel: 'L',
+          width: size,
+          margin: 2
+        });
+      }
     }
 
     genBtn.addEventListener('click', async () => {
       let text = dataEl.value.trim();
       if (!text) { alert('Enter text or a link'); return; }
+      text = cleanUrlIfPossible(text);
 
-      // Light cleanup: strip common tracking params from URLs
-      try {
-        const u = new URL(text);
-        const strip = ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','fbclid','gclid'];
-        strip.forEach(k => u.searchParams.delete(k));
-        text = u.toString();
-      } catch {} // not a URL, ignore
+      await renderQRToCanvas(text);
 
-      await renderQR(text);
-      canvas.style.display = 'block';
-      dlBtn.style.display = 'inline-block';
-    });
-
-    dlBtn.addEventListener('click', () => {
-      canvas.toBlob(blob => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `qr_${ts()}.png`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }, 'image/png');
+      // Convert to JPEG and show as an <img> so users can long-press to save
+      const quality = 0.92; // tweak 0.8..1.0 if you want
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      imgEl.src = dataUrl;
+      imgEl.style.display = 'block';
     });
   </script>
 </body>
