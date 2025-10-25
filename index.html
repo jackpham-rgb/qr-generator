@@ -5,52 +5,43 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>QR Code Generator</title>
   <style>
-    :root { color-scheme: light dark; }
     body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
-           margin: 0; padding: 16px; max-width: 720px; margin-inline: auto; }
-    h2 { margin: 0 0 8px; }
-    textarea { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; }
-    button { margin-top: 10px; padding: 10px 14px; font-size: 16px; }
-    #canvas { display: block; margin-top: 16px; max-width: 100%; height: auto; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .hidden { display: none; }
+           margin: 0; padding: 16px; max-width: 720px; margin-inline: auto; text-align: center; }
+    h2 { margin: 0 0 12px; }
+    textarea { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; resize: none; }
+    button { margin-top: 14px; padding: 10px 20px; font-size: 16px; display: inline-block; }
+    #canvas { display: block; margin: 20px auto 6px; max-width: 90%; height: auto; }
+    #status { font-size: 13px; color: #666; min-height: 1.2em; }
   </style>
 </head>
 <body>
   <h2>QR Code Generator</h2>
 
-  <textarea id="data" rows="3" placeholder="Type text or link"></textarea>
+  <textarea id="data" rows="3" placeholder="Type text or link"></textarea><br>
+  <button id="gen">Generate</button>
+  <button id="download" style="display:none;">Download PNG</button>
 
-  <div class="row">
-    <button id="gen">Generate</button>
-    <button id="download" class="hidden">Download PNG</button>
-  </div>
+  <canvas id="canvas" style="display:none;"></canvas>
+  <div id="status"></div>
 
-  <canvas id="canvas" class="hidden"></canvas>
-
-  <!-- Library that supports version and errorCorrectionLevel like Python -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
   <script>
     const dataEl = document.getElementById('data');
     const genBtn = document.getElementById('gen');
     const dlBtn = document.getElementById('download');
     const canvas = document.getElementById('canvas');
+    const statusEl = document.getElementById('status');
 
     function ts() {
-      const d = new Date();
-      const p = n => String(n).padStart(2, '0');
+      const d = new Date(), p = n => String(n).padStart(2,'0');
       return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
     }
 
-    genBtn.addEventListener('click', async () => {
-      const text = dataEl.value.trim();
-      if (!text) { alert('Enter text or a link'); return; }
-
-      // Match your Python defaults: version=1 and lowest error correction (L)
-      // If the data does not fit version 1, we fall back to auto version.
-      const size = 256; // visual pixel size, not module count
+    async function renderQR(text) {
+      const size = 256; // pixel size
       canvas.width = size; canvas.height = size;
 
+      // 1) Try compact: version=1, EC=L
       try {
         await QRCode.toCanvas(canvas, text, {
           version: 1,
@@ -58,18 +49,34 @@
           width: size,
           margin: 2
         });
-      } catch {
-        // If it does not fit in version 1, use auto version but keep L
-        await QRCode.toCanvas(canvas, text, {
-          errorCorrectionLevel: 'L',
-          width: size,
-          margin: 2
-        });
-        alert('Text was too long for version 1. Used a larger version automatically.');
-      }
+        statusEl.textContent = 'Mode: compact (V1, L)';
+        return;
+      } catch {}
 
-      canvas.classList.remove('hidden');
-      dlBtn.classList.remove('hidden');
+      // 2) Fallback: auto version, still EC=L
+      await QRCode.toCanvas(canvas, text, {
+        errorCorrectionLevel: 'L',
+        width: size,
+        margin: 2
+      });
+      statusEl.textContent = 'Mode: standard (auto version, L)';
+    }
+
+    genBtn.addEventListener('click', async () => {
+      let text = dataEl.value.trim();
+      if (!text) { alert('Enter text or a link'); return; }
+
+      // Light cleanup: strip common tracking params from URLs
+      try {
+        const u = new URL(text);
+        const strip = ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','fbclid','gclid'];
+        strip.forEach(k => u.searchParams.delete(k));
+        text = u.toString();
+      } catch {} // not a URL, ignore
+
+      await renderQR(text);
+      canvas.style.display = 'block';
+      dlBtn.style.display = 'inline-block';
     });
 
     dlBtn.addEventListener('click', () => {
