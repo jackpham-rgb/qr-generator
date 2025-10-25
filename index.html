@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QR Code Generator</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+           margin: 0; padding: 16px; max-width: 720px; margin-inline: auto; }
+    h2 { margin: 0 0 8px; }
+    textarea { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; }
+    button { margin-top: 10px; padding: 10px 14px; font-size: 16px; }
+    #canvas { display: block; margin-top: 16px; max-width: 100%; height: auto; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h2>QR Code Generator</h2>
+
+  <textarea id="data" rows="3" placeholder="Type text or link"></textarea>
+
+  <div class="row">
+    <button id="gen">Generate</button>
+    <button id="download" class="hidden">Download PNG</button>
+  </div>
+
+  <canvas id="canvas" class="hidden"></canvas>
+
+  <!-- Library that supports version and errorCorrectionLevel like Python -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <script>
+    const dataEl = document.getElementById('data');
+    const genBtn = document.getElementById('gen');
+    const dlBtn = document.getElementById('download');
+    const canvas = document.getElementById('canvas');
+
+    function ts() {
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+    }
+
+    genBtn.addEventListener('click', async () => {
+      const text = dataEl.value.trim();
+      if (!text) { alert('Enter text or a link'); return; }
+
+      // Match your Python defaults: version=1 and lowest error correction (L)
+      // If the data does not fit version 1, we fall back to auto version.
+      const size = 256; // visual pixel size, not module count
+      canvas.width = size; canvas.height = size;
+
+      try {
+        await QRCode.toCanvas(canvas, text, {
+          version: 1,
+          errorCorrectionLevel: 'L',
+          width: size,
+          margin: 2
+        });
+      } catch {
+        // If it does not fit in version 1, use auto version but keep L
+        await QRCode.toCanvas(canvas, text, {
+          errorCorrectionLevel: 'L',
+          width: size,
+          margin: 2
+        });
+        alert('Text was too long for version 1. Used a larger version automatically.');
+      }
+
+      canvas.classList.remove('hidden');
+      dlBtn.classList.remove('hidden');
+    });
+
+    dlBtn.addEventListener('click', () => {
+      canvas.toBlob(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `qr_${ts()}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }, 'image/png');
+    });
+  </script>
+</body>
+</html>
